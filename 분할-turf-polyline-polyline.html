@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>폴리라인 분할 예제 (Simple Canvas)</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+            background: #f5f5f5;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            margin: 0;
+            font-size: 24px;
+        }
+        
+        .controls {
+            padding: 20px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #e9ecef;
+        }
+        
+        .control-group {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.2s;
+        }
+        
+        button:hover {
+            background: #0056b3;
+        }
+        
+        button:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+        }
+        
+        .reset-btn {
+            background: #dc3545;
+        }
+        
+        .reset-btn:hover {
+            background: #c82333;
+        }
+        
+        #canvas {
+            width: 100%;
+            height: 500px;
+            border: 1px solid #e9ecef;
+            cursor: crosshair;
+            background: #f8f9fa;
+        }
+        
+        .info {
+            padding: 20px;
+            background: #e7f3ff;
+            border-top: 1px solid #b3d9ff;
+        }
+        
+        .legend {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+            margin-top: 10px;
+        }
+        
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .legend-color {
+            width: 20px;
+            height: 3px;
+            border-radius: 2px;
+        }
+        
+        .result {
+            padding: 20px;
+            border-top: 1px solid #e9ecef;
+        }
+        
+        .result h3 {
+            margin-top: 0;
+            color: #333;
+        }
+        
+        .coordinates {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 12px;
+            max-height: 200px;
+            overflow-y: auto;
+            border: 1px solid #e9ecef;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🛣️ 폴리라인 분할 예제 (Canvas 버전)</h1>
+        </div>
+        
+        <div class="controls">
+            <div class="control-group">
+                <button id="drawMainLine">메인 라인 그리기</button>
+                <button id="drawSplitLine">분할 라인 그리기</button>
+                <button id="splitPolyline">폴리라인 분할</button>
+                <button id="reset" class="reset-btn">초기화</button>
+            </div>
+            <div class="control-group">
+                <span id="status">메인 라인을 먼저 그려주세요</span>
+            </div>
+        </div>
+        
+        <canvas id="canvas" width="1160" height="500"></canvas>
+        
+        <div class="info">
+            <strong>사용법:</strong>
+            <ol>
+                <li><strong>메인 라인 그리기</strong>: 캔버스에서 클릭해서 폴리라인을 그립니다 (더블클릭으로 완료)</li>
+                <li><strong>분할 라인 그리기</strong>: 메인 라인을 자를 라인을 그립니다 (더블클릭으로 완료)</li>
+                <li><strong>폴리라인 분할</strong>: 교차점에서 자동으로 분할합니다</li>
+            </ol>
+            
+            <div class="legend">
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #007bff;"></div>
+                    <span>메인 라인</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #dc3545;"></div>
+                    <span>분할 라인</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #28a745;"></div>
+                    <span>분할된 세그먼트</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #ffc107; height: 8px; width: 8px; border-radius: 50%;"></div>
+                    <span>교차점</span>
+                </div>
+            </div>
+        </div>
+        
+        <div class="result">
+            <h3>분할 결과</h3>
+            <div id="resultInfo">분할을 실행하면 결과가 여기에 표시됩니다.</div>
+        </div>
+    </div>
+
+    <script>
+        // Canvas 및 컨텍스트
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        
+        // 데이터 저장
+        let mainLine = [];
+        let splitLine = [];
+        let currentDrawing = [];
+        let drawingMode = null;
+        let intersections = [];
+        let splitSegments = [];
+        
+        // DOM 요소들
+        const drawMainLineBtn = document.getElementById('drawMainLine');
+        const drawSplitLineBtn = document.getElementById('drawSplitLine');
+        const splitPolylineBtn = document.getElementById('splitPolyline');
+        const resetBtn = document.getElementById('reset');
+        const statusElement = document.getElementById('status');
+        const resultInfo = document.getElementById('resultInfo');
+        
+        // 캔버스 이벤트 리스너
+        canvas.addEventListener('click', handleCanvasClick);
+        canvas.addEventListener('dblclick', handleCanvasDoubleClick);
+        
+        // 버튼 이벤트 리스너
+        drawMainLineBtn.addEventListener('click', () => startDrawing('main'));
+        drawSplitLineBtn.addEventListener('click', () => startDrawing('split'));
+        splitPolylineBtn.addEventListener('click', performSplit);
+        resetBtn.addEventListener('click', reset);
+        
+        function startDrawing(mode) {
+            drawingMode = mode;
+            currentDrawing = [];
+            
+            if (mode === 'main') {
+                mainLine = [];
+                clearResults();
+            } else if (mode === 'split') {
+                splitLine = [];
+                clearResults();
+            }
+            
+            updateUI();
+            redraw();
+        }
+        
+        function handleCanvasClick(event) {
+            if (!drawingMode) return;
+            
+            const rect = canvas.getBoundingClientRect();
+            const x = event.clientX - rect.left;
+            const y = event.clientY - rect.top;
+            
+            currentDrawing.push({x, y});
+            redraw();
+        }
+        
+        function handleCanvasDoubleClick(event) {
+            if (!drawingMode || currentDrawing.length < 2) return;
+            
+            if (drawingMode === 'main') {
+                mainLine = [...currentDrawing];
+            } else if (drawingMode === 'split') {
+                splitLine = [...currentDrawing];
+            }
+            
+            drawingMode = null;
+            currentDrawing = [];
+            updateUI();
+            redraw();
+        }
+        
+        function redraw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // 격자 그리기
+            drawGrid();
+            
+            // 메인 라인 그리기
+            if (mainLine.length > 0) {
+                drawLine(mainLine, '#007bff', 4);
+            }
+            
+            // 분할 라인 그리기
+            if (splitLine.length > 0) {
+                drawLine(splitLine, '#dc3545', 4);
+            }
+            
+            // 현재 그리는 중인 라인
+            if (currentDrawing.length > 0) {
+                const color = drawingMode === 'main' ? '#007bff' : '#dc3545';
+                drawLine(currentDrawing, color, 2, true);
+            }
+            
+            // 분할된 세그먼트들
+            splitSegments.forEach((segment, index) => {
+                const colors = ['#28a745', '#17a2b8', '#fd7e14', '#6f42c1', '#e83e8c'];
+                drawLine(segment, colors[index % colors.length], 6);
+            });
+            
+            // 교차점들
+            intersections.forEach(point => {
+                drawPoint(point, '#ffc107', 8);
+            });
+        }
+        
+        function drawGrid() {
+            ctx.strokeStyle = '#e9ecef';
+            ctx.lineWidth = 1;
+            
+            for (let x = 0; x <= canvas.width; x += 50) {
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, canvas.height);
+                ctx.stroke();
+            }
+            
+            for (let y = 0; y <= canvas.height; y += 50) {
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(canvas.width, y);
+                ctx.stroke();
+            }
+        }
+        
+        function drawLine(points, color, width, dashed = false) {
+            if (points.length < 2) return;
+            
+            ctx.strokeStyle = color;
+            ctx.lineWidth = width;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            
+            if (dashed) {
+                ctx.setLineDash([5, 5]);
+            } else {
+                ctx.setLineDash([]);
+            }
+            
+            ctx.beginPath();
+            ctx.moveTo(points[0].x, points[0].y);
+            
+            for (let i = 1; i < points.length; i++) {
+                ctx.lineTo(points[i].x, points[i].y);
+            }
+            
+            ctx.stroke();
+        }
+        
+        function drawPoint(point, color, size) {
+            ctx.fillStyle = color;
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 2;
+            
+            ctx.beginPath();
+            ctx.arc(point.x, point.y, size/2, 0, 2 * Math.PI);
+            ctx.fill();
+            ctx.stroke();
+        }
+        
+        function updateUI() {
+            const hasMainLine = mainLine.length > 0;
+            const hasSplitLine = splitLine.length > 0;
+            
+            drawSplitLineBtn.disabled = !hasMainLine;
+            splitPolylineBtn.disabled = !hasMainLine || !hasSplitLine;
+            
+            if (drawingMode === 'main') {
+                statusElement.textContent = '캔버스에서 클릭하여 메인 라인을 그리세요 (더블클릭으로 완료)';
+            } else if (drawingMode === 'split') {
+                statusElement.textContent = '캔버스에서 클릭하여 분할 라인을 그리세요 (더블클릭으로 완료)';
+            } else if (!hasMainLine) {
+                statusElement.textContent = '메인 라인을 먼저 그려주세요';
+            } else if (!hasSplitLine) {
+                statusElement.textContent = '분할 라인을 그려주세요';
+            } else {
+                statusElement.textContent = '폴리라인 분할 버튼을 클릭하세요';
+            }
+        }
+        
+        function performSplit() {
+            if (mainLine.length < 2 || splitLine.length < 2) {
+                alert('메인 라인과 분할 라인이 모두 필요합니다.');
+                return;
+            }
+            
+            // 교차점 찾기
+            intersections = findIntersections(mainLine, splitLine);
+            
+            if (intersections.length === 0) {
+                resultInfo.innerHTML = '<div style="color: #dc3545;">❌ 두 라인이 교차하지 않습니다.</div>';
+                redraw();
+                return;
+            }
+            
+            // 메인 라인을 교차점에서 분할
+            splitSegments = splitLineAtPoints(mainLine, intersections);
+            
+            // 결과 표시
+            let resultHTML = `
+                <div style="color: #28a745; margin-bottom: 15px;">
+                    ✅ 분할 성공! ${intersections.length}개 교차점에서 ${splitSegments.length}개 세그먼트로 분할되었습니다.
+                </div>
+                <div class="coordinates">
+                    <strong>교차점 좌표:</strong><br>
+            `;
+            
+            intersections.forEach((point, index) => {
+                resultHTML += `${index + 1}. (${point.x.toFixed(1)}, ${point.y.toFixed(1)})<br>`;
+            });
+            
+            resultHTML += '<br><strong>분할된 세그먼트:</strong><br>';
+            splitSegments.forEach((segment, index) => {
+                const length = calculateLineLength(segment);
+                resultHTML += `세그먼트 ${index + 1}: ${length.toFixed(1)}px<br>`;
+            });
+            
+            resultHTML += '</div>';
+            resultInfo.innerHTML = resultHTML;
+            
+            statusElement.textContent = '분할이 완료되었습니다. 결과를 확인하세요.';
+            redraw();
+        }
+        
+        function findIntersections(line1, line2) {
+            const intersections = [];
+            
+            for (let i = 0; i < line1.length - 1; i++) {
+                for (let j = 0; j < line2.length - 1; j++) {
+                    const intersection = getLineIntersection(
+                        line1[i], line1[i + 1],
+                        line2[j], line2[j + 1]
+                    );
+                    
+                    if (intersection) {
+                        // 중복 제거
+                        const isDuplicate = intersections.some(point => 
+                            Math.abs(point.x - intersection.x) < 2 && 
+                            Math.abs(point.y - intersection.y) < 2
+                        );
+                        
+                        if (!isDuplicate) {
+                            intersection.mainSegment = i;
+                            intersection.t = getParameterOnLine(line1[i], line1[i + 1], intersection);
+                            intersections.push(intersection);
+                        }
+                    }
+                }
+            }
+            
+            // 메인 라인상의 위치에 따라 정렬
+            intersections.sort((a, b) => {
+                if (a.mainSegment !== b.mainSegment) {
+                    return a.mainSegment - b.mainSegment;
+                }
+                return a.t - b.t;
+            });
+            
+            return intersections;
+        }
+        
+        function getLineIntersection(p1, p2, p3, p4) {
+            const x1 = p1.x, y1 = p1.y;
+            const x2 = p2.x, y2 = p2.y;
+            const x3 = p3.x, y3 = p3.y;
+            const x4 = p4.x, y4 = p4.y;
+            
+            const denom = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
+            
+            if (Math.abs(denom) < 1e-10) return null; // 평행선
+            
+            const t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / denom;
+            const u = -((x1 - x2) * (y1 - y3) - (y1 - y2) * (x1 - x3)) / denom;
+            
+            if (t >= 0 && t <= 1 && u >= 0 && u <= 1) {
+                return {
+                    x: x1 + t * (x2 - x1),
+                    y: y1 + t * (y2 - y1)
+                };
+            }
+            
+            return null;
+        }
+        
+        function getParameterOnLine(p1, p2, point) {
+            const dx = p2.x - p1.x;
+            const dy = p2.y - p1.y;
+            
+            if (Math.abs(dx) > Math.abs(dy)) {
+                return (point.x - p1.x) / dx;
+            } else {
+                return (point.y - p1.y) / dy;
+            }
+        }
+        
+        function splitLineAtPoints(line, intersectionPoints) {
+            if (intersectionPoints.length === 0) return [line];
+            
+            const segments = [];
+            let currentSegment = [line[0]];
+            let currentPointIndex = 0;
+            
+            for (let i = 0; i < line.length - 1; i++) {
+                // 현재 세그먼트에 해당하는 교차점들 추가
+                const segmentIntersections = intersectionPoints
+                    .filter(point => point.mainSegment === i)
+                    .sort((a, b) => a.t - b.t);
+                
+                // 교차점들을 순서대로 추가
+                segmentIntersections.forEach(intersection => {
+                    currentSegment.push({x: intersection.x, y: intersection.y});
+                    segments.push([...currentSegment]);
+                    currentSegment = [{x: intersection.x, y: intersection.y}];
+                });
+                
+                // 다음 점 추가
+                currentSegment.push(line[i + 1]);
+            }
+            
+            // 마지막 세그먼트 추가
+            if (currentSegment.length > 1) {
+                segments.push(currentSegment);
+            }
+            
+            return segments.filter(segment => segment.length > 1);
+        }
+        
+        function calculateLineLength(points) {
+            let length = 0;
+            for (let i = 0; i < points.length - 1; i++) {
+                const dx = points[i + 1].x - points[i].x;
+                const dy = points[i + 1].y - points[i].y;
+                length += Math.sqrt(dx * dx + dy * dy);
+            }
+            return length;
+        }
+        
+        function clearResults() {
+            intersections = [];
+            splitSegments = [];
+            resultInfo.innerHTML = '분할을 실행하면 결과가 여기에 표시됩니다.';
+        }
+        
+        function reset() {
+            mainLine = [];
+            splitLine = [];
+            currentDrawing = [];
+            drawingMode = null;
+            clearResults();
+            updateUI();
+            redraw();
+        }
+        
+        // 초기화
+        updateUI();
+        redraw();
+    </script>
+</body>
+</html>
